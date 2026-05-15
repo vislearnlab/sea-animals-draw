@@ -163,40 +163,19 @@ All scripts are in `analysis/` and read from `data/tidy/`. Run independently of 
 ### 06_correlation_analysis
 Computes within-modality age effects and cross-modal correlation between drawing and description similarity to adults. Produces Figs 3A, 3B, 4.
 
-| | Path |
-|---|---|
-| **Input** | `data/tidy/drawings.csv`, `data/tidy/utterances.csv` |
-| **Output** | `figures/cds_drawing_sim.png`, `figures/cds_description_sim.png`, `figures/fig3.png`, `figures/cds_similarity_by_age_by_category.png` |
 
 ### 07_rsm_toself_analysis
 Writes participant/trial summary statistics, then builds representational similarity matrices (RSMs) from within-subject softmax probabilities, correlates RSMs across modalities for younger vs. older children, and plots cross-modal scatter. Produces Figs 5, 6.
 
-| | Path |
-|---|---|
-| **Input** | `data/tidy/drawings.csv`, `data/tidy/utterances.csv` |
-| **Output** | `data_intermediates/summaries/trial_summaries.txt` |
-| **Output** | `figures/combined_rdm_toself.png`, `figures/cross_modal_rdm_scatter.png` |
 
 ### 08_features_analysis
 Plots hand-coded feature proportions by category and feature counts by age, for drawings and descriptions at both 50% and 100% timepoints. Produces Figs 7, 8, 9, 10, 13, 14, 15, 16.
 
-| | Path |
-|---|---|
-| **Input** | `data/tidy/drawings.csv`, `data/tidy/utterances.csv` |
-| **Output** | `figures/top_drawn_features.png`, `figures/top_drawn_features_half.png`, `figures/top_talk_features.png`, `figures/top_talk_features_half.png`, `figures/top_shared_features.png`, `figures/top_shared_features_half.png`, `figures/features_draw_desc_full.png`, `figures/features_draw_desc_half.png`, `figures/drawn_features_by_age.png`, `figures/drawn_features_half_by_age.png`, `figures/utterance_features_by_age.png`, `figures/utterance_half_features_by_age.png`, `figures/shared_features_age.png`, `figures/shared_half_features_age.png` |
 
 ### 09a_draw_time_analysis
 Plots drawing cosine similarity to adult prototype at 50% vs. 100% of drawing (z-scored within category), fits mixed models for timepoint and age effects, and plots developmental trajectories by age bin. Produces Figs 11A, 12A.
 
-| | Path |
-|---|---|
-| **Input** | `data/tidy/drawings.csv` |
-| **Output** | `figures/drawing_similarity_to_adults_over_time.png`, `figures/collapsed_drawing_similarity_to_adults_over_time.png`, `figures/drawing_similarity_to_adults_over_time_by_age_bin.png`, `figures/drawing_similarity_to_adults_over_time_interaction_plot.png` |
 
 ### 09b_talk_time_analysis
 Same as 09a but for utterances. Produces Figs 11B, 12B.
 
-| | Path |
-|---|---|
-| **Input** | `data/tidy/utterances.csv` |
-| **Output** | `figures/utterance_similarity_to_adults_over_time.png`, `figures/collapsed_utterance_similarity_to_adults_over_time.png`, `figures/utterance_similarity_to_adults_over_time_by_age_bin.png`, `figures/utterance_similarity_to_adults_over_time_interaction_plot.png` |
