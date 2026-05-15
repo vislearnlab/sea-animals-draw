@@ -1,0 +1,58 @@
+=== CHILDREN'S DATA SUMMARY AFTER EXCLUSIONS ===
+
+Exclusion criteria applied:
+  - Children only (is_child == TRUE; participant_id starts with BD025+)
+  - Artifact must exist (draw_exists == 1; utterance_exists == 1)
+  - No interference (draw_interference == 0; utterance_interference == 0)
+  - Age must be present (no missing age_months)
+
+Excluded participants (not in analysis):
+  - BD049, BD050, BD052, BD064, BD081: no data in features spine
+  - BD085, BD097: missing age data (data collection error)
+  - BD059, BD067, BD082, BD101: zero valid trials in either modality after exclusions
+  - BD119-BD124: INCLUDED (valid participants collected later)
+
+Total child participants included in analyses: 89
+
+Mean age (years): 6.79 (SD = 2.32)
+Mean age (months): 81.5 (SD = 27.8)
+
+=== DRAWINGS (draw_exists == 1, draw_interference == 0) ===
+
+Total child drawing trials: 483
+
+Child drawings by category:
+  crab: 79
+  octopus: 81
+  seahorse: 80
+  shark: 82
+  turtle: 79
+  whale: 82
+
+Child participants contributing drawings: 88
+
+=== UTTERANCES (utterance_exists == 1, utterance_interference == 0) ===
+
+Total child utterance trials: 422
+
+Child utterances by category:
+  crab: 69
+  octopus: 70
+  seahorse: 68
+  shark: 70
+  turtle: 71
+  whale: 74
+
+Child participants contributing utterances: 79
+
+=== OVERLAP ===
+
+Participants with valid drawing AND utterance: 77
+Participants with drawing only: 11
+Participants with utterance only: 2
+Total (drawing OR utterance): 89
+
+=== FULL DATASET (all participants, before exclusions) ===
+
+Total rows in drawings.csv: 638
+Total rows in utterances.csv: 638
