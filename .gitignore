@@ -4,3 +4,23 @@
 .Ruserdata
 **.DS_Store
 preprocessing/auth.txt
+.env
+auth.txt
+figures
+preprocessing/__pycache__/
+preprocessing/run_coding_scheme_full.py
+preprocessing/run_coding_scheme_subset.py
+analysis/09_human_vs_gemini_features.R 
+data/tidy/*.bak_*
+data/embeddings
+data/judgments
+data/embeddings/gemini/_cache/
+data/raw
+data_intermediates/*
+data/clean
+data/test_pairs
+
+# Local tooling and Python/R byproducts
+.venv/
+.claude/
+__pycache__/

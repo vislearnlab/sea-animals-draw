@@ -1,0 +1,250 @@
+---
+title: "Additional diagnostics: presentation order"
+output: html_document
+author: Nicole
+date: "9.24.26"
+---
+
+Does order impact the information children provide? For example, if context if provided by the first animal, are later animals more specific to unique features within sea animals (vs animals more broadly)?
+
+`trial_num_animal` (1–6) comes from `preprocessing/05b_add_trial_num.py`. It is
+**not** the raw `trial_num`, which runs 5–12: every session opens with a fixed
+warm-up block (square, shape, this_square, then a penguin), after which the six sea animals appear in randomised order. So
+`trial_num_animal` is the rank of the raw trial among the six animals only.
+
+Children only, with the usual exclusions (`is_child`, `*_exists == 1`,
+`*_interference == 0`). Conventions follow `09_human_vs_gemini_features.R`: run
+from `analysis/`, `theme_bw()`, `ggsave(..., "../figures/...")`.
+
+
+```{r setup, message=FALSE, warning=FALSE}
+library(tidyverse)
+library(viridis)
+
+knitr::opts_chunk$set(warning = FALSE, message = FALSE, fig.retina = 2)
+
+CATEGORIES <- c("crab", "octopus", "seahorse", "shark", "turtle", "whale")
+
+# Rows from children missing one of the six animals have ranks shifted down below
+# the gap, so trial_num_animal misstates absolute position for them. TRUE keeps
+# only complete children (n_animals_present == 6); FALSE keeps everyone.
+COMPLETE_ONLY <- TRUE
+
+drawings <- read_csv("../data/tidy/drawings.csv") %>%
+  filter(is_child, draw_exists == 1, draw_interference == 0) %>%
+  mutate(target_category = str_to_lower(target_category)) %>%
+  filter(target_category %in% CATEGORIES)
+
+utterances <- read_csv("../data/tidy/utterances.csv") %>%
+  filter(is_child, utterance_exists == 1, utterance_interference == 0) %>%
+  mutate(target_category = str_to_lower(target_category)) %>%
+  filter(target_category %in% CATEGORIES)
+
+if (COMPLETE_ONLY) {
+  drawings   <- filter(drawings,   n_animals_present == 6)
+  utterances <- filter(utterances, n_animals_present == 6)
+}
+
+cat("drawings:  ", nrow(drawings),
+    " | with trial order:", sum(!is.na(drawings$trial_num_animal)),
+    " | with cossim:", sum(!is.na(drawings$draw_cossim_adults)), "\n")
+cat("utterances:", nrow(utterances),
+    " | with trial order:", sum(!is.na(utterances$trial_num_animal)),
+    " | with cossim:", sum(!is.na(utterances$utterance_full_cossim_adults)), "\n")
+```
+
+## 1. Sanity check: are trial orders evenly distributed across categories?
+
+
+```{r trial-counts, fig.width=9, fig.height=5}
+trial_counts <- drawings %>%
+  filter(!is.na(trial_num_animal)) %>%
+  count(target_category, trial_num_animal)
+
+p_trials <- ggplot(trial_counts,
+                   aes(factor(trial_num_animal), n, fill = factor(trial_num_animal))) +
+  geom_col(width = 0.8) +
+  facet_wrap(~ target_category) +
+  scale_fill_viridis_d(end = 0.9, guide = "none") +
+  labs(
+    title    = "Drawings per presentation position, by category",
+    subtitle = "position 1-6 among the six sea animals; flat bars mean order was randomised",
+    x = "Presentation position among the six animals", y = "Number of drawings"
+  ) +
+  theme_bw()
+
+p_trials
+ggsave("../figures/diag_trial_counts.png", p_trials, width = 9, height = 5, dpi = 300)
+trial_counts %>% pivot_wider(names_from = trial_num_animal, values_from = n)
+```
+
+## 2. Sanity check: bounding-box area
+
+`bounding_box` is stored as a Python repr — `(np.int64(49), np.int64(161),
+np.int64(17), np.int64(191))` — so the numbers have to be pulled out with a
+regex. Note the regex takes only *parenthesised* digits: a plain `\\d+` also
+matches the `64` in `np.int64` and yields eight numbers per row instead of four.
+
+The four values are `(x0, x1, y0, y1)`, so area is `(x1 - x0) * (y1 - y0)`. That
+orientation is the one that gives no non-positive dimensions across all 629
+non-null rows; the `(x0, y0, x1, y1)` reading produces 496 negative ones.
+Coordinates run 0–223, so the canvas these were measured on is ~224 x 224 and the
+maximum possible area is ~50k.
+
+Drawings only — utterances have no bounding box.
+
+```{r bbox, fig.width=9, fig.height=5}
+bbox <- drawings %>%
+  filter(!is.na(bounding_box)) %>%
+  mutate(
+    coords = str_extract_all(bounding_box, "(?<=\\()-?\\d+(?=\\))"),
+    x0 = map_dbl(coords, ~ as.numeric(.x[1])),
+    x1 = map_dbl(coords, ~ as.numeric(.x[2])),
+    y0 = map_dbl(coords, ~ as.numeric(.x[3])),
+    y1 = map_dbl(coords, ~ as.numeric(.x[4])),
+    bbox_area = (x1 - x0) * (y1 - y0)
+  )
+
+stopifnot(all(lengths(bbox$coords) == 4), all(bbox$bbox_area > 0))
+
+p_bbox <- ggplot(bbox, aes(bbox_area, fill = target_category)) +
+  geom_histogram(bins = 28, colour = "white", linewidth = 0.2) +
+  facet_wrap(~ target_category) +
+  scale_fill_viridis_d(end = 0.9, guide = "none") +
+  scale_x_continuous(labels = scales::label_number(scale = 1e-3, suffix = "k")) +
+  labs(
+    title    = "Bounding-box area of children's drawings, by category",
+    subtitle = "area = (x1 - x0)(y1 - y0) on a ~224 x 224 canvas",
+    x = "Bounding-box area (px²)", y = "Number of drawings"
+  ) +
+  theme_bw()
+
+p_bbox
+ggsave("../figures/diag_bbox_area.png", p_bbox, width = 9, height = 5, dpi = 300)
+bbox %>% group_by(target_category) %>%
+  summarise(n = n(), median_area = median(bbox_area), mean_area = mean(bbox_area),
+            .groups = "drop") %>% mutate(across(where(is.numeric), round))
+```
+
+### Bounding-box area by category
+
+The same areas as a per-category comparison rather than a distribution: every
+drawing as a translucent point, with the category mean opaque and larger on top.
+
+```{r bbox-means, fig.width=8, fig.height=4.5}
+bbox_means <- bbox %>%
+  group_by(target_category) %>%
+  summarise(n = n(), mean_area = mean(bbox_area),
+            se = sd(bbox_area) / sqrt(n()),
+            ci = qt(0.975, n() - 1) * se, .groups = "drop") %>%
+  mutate(lower = pmax(0, mean_area - ci), upper = mean_area + ci)
+
+p_bbox_mean <- ggplot(bbox, aes(target_category, bbox_area,
+                                colour = target_category)) +
+  geom_point(position = position_jitter(width = 0.16, height = 0, seed = 1),
+             alpha = 0.3, size = 1.7) +
+  # errorbar before the mean point so the opaque dot sits on top of it
+  geom_errorbar(data = bbox_means,
+                aes(y = mean_area, ymin = lower, ymax = upper),
+                width = 0.15, colour = "black", linewidth = 0.5) +
+  geom_point(data = bbox_means, aes(y = mean_area), size = 4.2, alpha = 1) +
+  scale_colour_viridis_d(end = 0.9, guide = "none") +
+  scale_y_continuous(labels = scales::label_number(scale = 1e-3, suffix = "k")) +
+  labs(
+    title    = "Bounding-box area by category",
+    subtitle = sprintf("%d drawings; points are individual drawings, large points are category means with 95%% CI",
+                       nrow(bbox)),
+    x = NULL, y = "Bounding-box area (px\u00b2)"
+  ) +
+  theme_bw()
+
+p_bbox_mean
+ggsave("../figures/diag_bbox_area_by_category.png", p_bbox_mean,
+       width = 8, height = 4.5, dpi = 300)
+bbox_means %>% mutate(across(where(is.numeric), ~ round(.x, 1)))
+```
+
+## 3. Cosine similarity to adults by presentation position
+
+Similarity is z-scored **within category and modality**, so each facet centres on
+zero: category difficulty is removed and what is left is the order effect. That
+means heights are not comparable across facets by construction — only slopes are.
+
+Small translucent points are individual drawings/descriptions; the large opaque
+point is the position mean; the grey line joins those means.
+
+```{r order-effect-helper}
+RAW_ALPHA <- 0.3
+
+# z-score inside each category so the facets are centred and only the slope is
+# left to read; the mean points the trend line joins are means of those z-scores
+prep_order <- function(df, col) {
+  df %>%
+    filter(!is.na(trial_num_animal), !is.na({{ col }})) %>%
+    group_by(target_category) %>%
+    mutate(z = as.numeric(scale({{ col }}))) %>%
+    ungroup() %>%
+    mutate(pos = factor(trial_num_animal, levels = 1:6))
+}
+
+order_plot <- function(dat, title, subtitle) {
+  means <- dat %>%
+    group_by(target_category, pos) %>%
+    summarise(z = mean(z), n = n(), .groups = "drop")
+
+  ggplot(dat, aes(pos, z)) +
+    # line first so the points sit on top of it
+    geom_line(data = means, aes(group = 1), colour = "grey55", linewidth = 0.7) +
+    geom_point(aes(colour = pos), alpha = RAW_ALPHA, size = 1.6,
+               position = position_jitter(width = 0.12, height = 0, seed = 1)) +
+    geom_point(data = means, aes(colour = pos), size = 3.6, alpha = 1) +
+    geom_hline(yintercept = 0, linetype = "dashed", colour = "grey75",
+               linewidth = 0.3) +
+    facet_wrap(~ target_category) +
+    scale_colour_viridis_d(end = 0.9, guide = "none") +
+    labs(title = title, subtitle = subtitle,
+         x = "Presentation position among the six animals",
+         y = "Cosine similarity to adults (z, within category)") +
+    theme_bw()
+}
+```
+
+```{r order-drawings, fig.width=9.5, fig.height=6}
+draw_order <- prep_order(drawings, draw_cossim_adults)
+
+p_draw_order <- order_plot(
+  draw_order,
+  "Drawings: similarity to adults by presentation position",
+  sprintf("%d drawings; small points are individual drawings, large points are position means",
+          nrow(draw_order))
+)
+p_draw_order
+ggsave("../figures/diag_order_effect_drawings.png", p_draw_order,
+       width = 9.5, height = 6, dpi = 300)
+```
+
+```{r order-utterances, fig.width=9.5, fig.height=6}
+utt_order <- prep_order(utterances, utterance_full_cossim_adults)
+
+p_utt_order <- order_plot(
+  utt_order,
+  "Descriptions: similarity to adults by presentation position",
+  sprintf("%d descriptions; small points are individual descriptions, large points are position means",
+          nrow(utt_order))
+)
+p_utt_order
+ggsave("../figures/diag_order_effect_utterances.png", p_utt_order,
+       width = 9.5, height = 6, dpi = 300)
+```
+
+### Is this trend significant?  
+
+```{r order-slopes}
+library(lmerTest)  # gives p-values in summary(); otherwise lmer reports none
+
+draw_model <- lmer(z ~ trial_num_animal + (1 | target_category), data = draw_order)
+utt_model  <- lmer(z ~ trial_num_animal + (1 | target_category), data = utt_order)
+
+summary(draw_model)
+summary(utt_model)
+```

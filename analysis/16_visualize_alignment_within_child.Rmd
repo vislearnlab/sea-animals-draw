@@ -1,0 +1,452 @@
+---
+title: "Judge alignment within children"
+output: html_document
+author: "nicole"
+date: "10.20.26"
+---
+
+Visualizes alignment across the within-child trials over age, excluding interference trials.
+
+Figures are written to `../figures/withinchild_*_<version>.png`. The
+`withinchild_` 
+
+Conventions follow `11_visualize_alignment_test_pairs.Rmd`: run from `analysis/`, paths
+relative to it, `theme_bw()`, `reorder_within` + `scale_y_reordered` for
+per-facet ordering, `ggsave(..., "../figures/...")`.
+
+```{r setup, message=FALSE, warning=FALSE}
+library(tidyverse)
+library(viridis)
+library(tidytext)
+
+knitr::opts_chunk$set(warning = FALSE, message = FALSE, fig.retina = 2)
+
+PROMPT_VERSION <- "v6"   # bump alongside 10_judge_alignment_test_pairs.py
+RAW_ALPHA      <- 0.3
+
+PAL2 <- c("#4B0F6B", "#F06BA8")
+
+judgments <- read_csv("../data/judgments/alignment_within_child.csv") %>%
+  filter(prompt_version == PROMPT_VERSION, !is.na(score),
+         draw_interference == 0, utterance_interference == 0)
+
+fig_path <- function(stem) {
+  sprintf("../figures/withinchild_%s_%s.png", stem, PROMPT_VERSION)
+}
+
+# Adults run to 28 years and children stop around 12, so a single continuous axis
+# spends half its width on 116 adult trials. Every age figure is therefore drawn
+# twice: once over everyone, once over children alone, where the developmental
+# range is actually readable.
+children <- filter(judgments, is_child)
+
+cat("rows:", nrow(judgments), "| prompt:", PROMPT_VERSION, "\n")
+cat("participants:", n_distinct(judgments$participant_id), "\n")
+cat("children:", nrow(children), "trials from",
+    n_distinct(children$participant_id), "participants\n")
+cat("age range:", sprintf("%.1f-%.1f yrs", min(judgments$age_yrs), max(judgments$age_yrs)), "\n")
+count(judgments, target_category)
+```
+
+## 1.Overall score distribution (children only)
+
+```{r score-distribution, fig.width=8, fig.height=4}
+p_dist <- ggplot(children, aes(score)) +
+  geom_histogram(binwidth = 5, boundary = 0, fill = PAL2[1], colour = NA) +
+  scale_x_continuous(limits = c(-2.5, 102.5), breaks = seq(0, 100, 25)) +
+  labs(
+    title    = "Distribution of within-child alignment scores",
+    subtitle = sprintf("%d trials; %.0f%% at 100, %.0f%% at 0",
+                       nrow(children),
+                       100 * mean(children$score >= 100),
+                       100 * mean(children$score <= 0)),
+    x = "Alignment score (0-100)", y = "Trials"
+  ) +
+  theme_bw()
+
+p_dist
+ggsave(fig_path("score_distribution"), p_dist, width = 8, height = 4, dpi = 300)
+```
+
+```{r score-by-category-table}
+judgments %>%
+  group_by(target_category) %>%
+  summarise(
+    n          = n(),
+    mean       = round(mean(score), 1),
+    median     = median(score),
+    at_ceiling = sprintf("%.0f%%", 100 * mean(score >= 100)),
+    at_floor   = sprintf("%.0f%%", 100 * mean(score <= 0)),
+    agree_rate = sprintf("%.0f%%", 100 * mean(referents_agree, na.rm = TRUE)),
+    .groups    = "drop"
+  )
+```
+
+## 2. Alignment score by age
+
+### All participants
+```{r age-alignment-overall, fig.width=8, fig.height=4.5}
+age_score_plot <- function(dat, subtitle) {
+  means <- dat %>%
+    group_by(age_yrs) %>%
+    summarise(score = mean(score), n = n(), .groups = "drop")
+
+  ggplot(dat, aes(age_yrs, score)) +
+    geom_smooth(method = "lm", se = TRUE, colour = "grey55",
+                fill = "grey80", linewidth = 0.7) +
+    geom_point(aes(colour = age_yrs), alpha = .5, size = 1.8) +
+    scale_colour_viridis_c(end = 0.9, guide = "none") +
+    scale_y_continuous(limits = c(0, 100), breaks = seq(0, 100, 25)) +
+    labs(title = "Within-artist alignment score by age",
+         subtitle = subtitle,
+         x = "Age (yrs)", y = "Alignment score (0-100)") +
+    theme_bw()
+}
+
+p <- age_score_plot(
+  judgments,
+  sprintf("all categories pooled; %d trials, children and adults; grey line is a linear fit",
+          nrow(judgments)))
+p
+ggsave(fig_path("age_alignment_overall"), p, width = 8, height = 4.5, dpi = 300)
+```
+
+```{r age-alignment-children, fig.width=8, fig.height=4.5}
+p <- age_score_plot(
+  children,
+  sprintf("all categories pooled; %d child trials only; grey line is a linear fit",
+          nrow(children)))
+p
+ggsave(fig_path("age_alignment_children"), p, width = 8, height = 4.5, dpi = 300)
+```
+
+### By category
+
+```{r age-alignment-by-category, fig.width=12, fig.height=5.5}
+
+p_cat <- ggplot(children, aes(age_yrs, score)) +
+  geom_smooth(method = "lm", se = TRUE, colour = "grey55",
+              fill = "grey80", linewidth = 0.7) +
+  geom_point(aes(colour = age_yrs), alpha = .5, size = 1.6) +
+  facet_wrap(~ target_category, nrow = 2) +
+  scale_colour_viridis_c(end = 0.9, guide = "none") +
+  scale_y_continuous(limits = c(0, 100), breaks = seq(0, 100, 25)) +
+  labs(title = "Within-child alignment score by age and category",
+       subtitle = sprintf("%d trials, %d-%d per animal; grey line is a linear fit",
+                          nrow(children),
+                          min(table(children$target_category)),
+                          max(table(children$target_category))),
+       x = "Age (yrs)", y = "Alignment score (0-100)") +
+  theme_bw()
+
+p_cat
+ggsave(fig_path("age_alignment_by_category"), p_cat, width = 12, height = 5.5, dpi = 300)
+```
+
+## 3. Referent agreement by age
+
+`referents_agree` is TRUE when the judge gave the drawing and the description the
+same animal name, with "unclear" on either side counting as disagreement. It is a
+coarser, more interpretable companion to the 0-100 score: not *how* aligned, but
+whether the two modalities landed on the same animal at all.
+
+A proportion needs grouping, so age is binned into six quantile bins (the same
+`cut()` convention script 11 uses), each holding a similar number of trials.
+Error bars are normal-approximation binomial 95% CIs. The curve is a logistic fit
+through the raw 0/1 trials, not through the binned proportions, so it uses the
+continuous age rather than the bin midpoints.
+
+```{r age-bins}
+N_AGE_BINS <- 6
+
+# unique() on the breaks guards against tied quantiles collapsing a bin.
+AGE_BREAKS <- unique(quantile(judgments$age_yrs,
+                              probs = seq(0, 1, length.out = N_AGE_BINS + 1),
+                              na.rm = TRUE))
+
+agree_dat <- judgments %>%
+  filter(!is.na(referents_agree)) %>%
+  mutate(age_bin = cut(age_yrs, AGE_BREAKS, include.lowest = TRUE, dig.lab = 3),
+         agree   = as.integer(referents_agree))
+
+# normal-approximation binomial CI, clamped to [0, 1]. mid is the mean age of the
+# trials actually in the bin rather than the bin's nominal midpoint: it keeps the
+# black points on the same continuous axis as the logistic fit, and it stays
+# correct if a quantile bin comes out empty or lopsided.
+agree_ci <- agree_dat %>%
+  group_by(age_bin) %>%
+  summarise(n = n(), p = mean(agree), mid = mean(age_yrs), .groups = "drop") %>%
+  mutate(se    = sqrt(p * (1 - p) / n),
+         lower = pmax(0, p - 1.96 * se),
+         upper = pmin(1, p + 1.96 * se))
+
+agree_ci
+```
+
+```{r age-referents-agree, fig.width=8, fig.height=4.5}
+p_agree <- ggplot(agree_dat, aes(age_yrs, agree)) +
+  geom_point(aes(colour = age_yrs), alpha = 0.15, size = 1.6,
+             position = position_jitter(width = 0, height = 0.03, seed = 1)) +
+  geom_smooth(method = "glm", method.args = list(family = "binomial"),
+              se = TRUE, colour = "grey45", fill = "grey80", linewidth = 0.8) +
+  geom_errorbar(data = agree_ci, inherit.aes = FALSE,
+                aes(x = mid, ymin = lower, ymax = upper),
+                width = 0.3, colour = "black", linewidth = 0.5) +
+  geom_point(data = agree_ci, inherit.aes = FALSE,
+             aes(x = mid, y = p), size = 3.4, colour = "black") +
+  scale_colour_viridis_c(end = 0.9, guide = "none") +
+  scale_y_continuous(limits = c(-0.05, 1.05), breaks = seq(0, 1, 0.25),
+                     labels = scales::percent_format(accuracy = 1)) +
+  labs(title = "Referent agreement by age",
+       subtitle = paste(sprintf("%d trials;", nrow(agree_dat)),
+                        "black points are binned proportions with 95% CI,",
+                        "curve is a logistic fit through the raw trials"),
+       x = "Age (yrs)", y = "Drawing and description named the same animal") +
+  theme_bw()
+
+p_agree
+ggsave(fig_path("age_referents_agree"), p_agree, width = 8, height = 4.5, dpi = 300)
+```
+
+Children only. Adults run to 28 and agree ~93% of the time, so on the pooled axis
+above they flatten the interesting part of the curve into the left third.
+
+```{r age-referents-agree-children, fig.width=8, fig.height=4.5}
+agree_kids <- filter(agree_dat, is_child)
+
+# bins recomputed within children rather than reused from the pooled breaks, whose
+# top two bins are almost entirely adults
+KID_BREAKS <- unique(quantile(agree_kids$age_yrs,
+                              probs = seq(0, 1, length.out = N_AGE_BINS + 1),
+                              na.rm = TRUE))
+
+agree_kids_ci <- agree_kids %>%
+  mutate(age_bin = cut(age_yrs, KID_BREAKS, include.lowest = TRUE, dig.lab = 3)) %>%
+  group_by(age_bin) %>%
+  summarise(n = n(), p = mean(agree), mid = mean(age_yrs), .groups = "drop") %>%
+  mutate(se    = sqrt(p * (1 - p) / n),
+         lower = pmax(0, p - 1.96 * se),
+         upper = pmin(1, p + 1.96 * se))
+
+p_agree_kids <- ggplot(agree_kids, aes(age_yrs, agree)) +
+  geom_point(aes(colour = age_yrs), alpha = 0.15, size = 1.6,
+             position = position_jitter(width = 0, height = 0.03, seed = 1)) +
+  geom_smooth(method = "glm", method.args = list(family = "binomial"),
+              se = TRUE, colour = "grey45", fill = "grey80", linewidth = 0.8) +
+  geom_errorbar(data = agree_kids_ci, inherit.aes = FALSE,
+                aes(x = mid, ymin = lower, ymax = upper),
+                width = 0.15, colour = "black", linewidth = 0.5) +
+  geom_point(data = agree_kids_ci, inherit.aes = FALSE,
+             aes(x = mid, y = p), size = 3.4, colour = "black") +
+  scale_colour_viridis_c(end = 0.9, guide = "none") +
+  scale_y_continuous(limits = c(-0.05, 1.05), breaks = seq(0, 1, 0.25),
+                     labels = scales::percent_format(accuracy = 1)) +
+  labs(title = "Referent agreement by age, children only",
+       subtitle = paste(sprintf("%d child trials (adults excluded);", nrow(agree_kids)),
+                        "black points are binned proportions with 95% CI"),
+       x = "Age (yrs)", y = "Drawing and description named the same animal") +
+  theme_bw()
+
+p_agree_kids
+ggsave(fig_path("age_referents_agree_children"), p_agree_kids,
+       width = 8, height = 4.5, dpi = 300)
+```
+
+### By category
+
+```{r age-referents-agree-by-category, fig.width=12, fig.height=5.5}
+p_agree_cat <- ggplot(agree_kids, aes(age_yrs, agree)) +
+  geom_point(aes(colour = age_yrs), alpha = 0.15, size = 1.4,
+             position = position_jitter(width = 0, height = 0.03, seed = 1)) +
+  geom_smooth(method = "glm", method.args = list(family = "binomial"),
+              se = TRUE, colour = "grey45", fill = "grey80", linewidth = 0.8) +
+  facet_wrap(~ target_category, nrow = 2) +
+  scale_colour_viridis_c(end = 0.9, guide = "none") +
+  scale_y_continuous(limits = c(-0.05, 1.05), breaks = seq(0, 1, 0.5),
+                     labels = scales::percent_format(accuracy = 1)) +
+  labs(title = "Referent agreement by age and category",
+       subtitle = "logistic fit through the raw trials; points jittered vertically",
+       x = "Age (yrs)", y = "Same animal named") +
+  theme_bw()
+
+p_agree_cat
+ggsave(fig_path("age_referents_agree_by_category"), p_agree_cat,
+       width = 12, height = 5.5, dpi = 300)
+```
+
+## 4. What were drawings categorized as?
+
+```{r drawing-referents, fig.width=9, fig.height=6}
+drawing_refs <- judgments %>%
+  filter(!is.na(drawing_referent)) %>%
+  count(target_category, drawing_referent) %>%
+  mutate(correct  = drawing_referent == target_category,
+         referent = reorder_within(drawing_referent, n, target_category))
+
+p_draw_ref <- ggplot(drawing_refs, aes(n, referent, fill = correct)) +
+  geom_col(width = 0.75) +
+  facet_wrap(~ target_category, scales = "free_y") +
+  scale_y_reordered() +
+  scale_fill_manual(values = PAL2, name = "matches target") +
+  labs(title = "What Gemini called each drawing",
+       subtitle = sprintf("%d within-child trials; faceted by the animal the child was asked to draw",
+                          sum(drawing_refs$n)),
+       x = "Number of trials", y = NULL) +
+  theme_bw()
+
+p_draw_ref
+ggsave(fig_path("drawing_referents"), p_draw_ref, width = 9, height = 6, dpi = 300)
+```
+
+## 5. What were descriptions categorized as?
+
+Same construction, over the masked descriptions.
+
+```{r utterance-referents, fig.width=9, fig.height=6}
+utterance_refs <- judgments %>%
+  filter(!is.na(utterance_referent)) %>%
+  count(target_category, utterance_referent) %>%
+  mutate(correct  = utterance_referent == target_category,
+         referent = reorder_within(utterance_referent, n, target_category))
+
+p_utt_ref <- ggplot(utterance_refs, aes(n, referent, fill = correct)) +
+  geom_col(width = 0.75) +
+  facet_wrap(~ target_category, scales = "free_y") +
+  scale_y_reordered() +
+  scale_fill_manual(values = PAL2, name = "matches target") +
+  labs(title = "What Gemini called each description",
+       subtitle = sprintf("%d within-child trials; faceted by the animal the child was asked to describe",
+                          sum(utterance_refs$n)),
+       x = "Number of trials", y = NULL) +
+  theme_bw()
+
+p_utt_ref
+ggsave(fig_path("utterance_referents"), p_utt_ref, width = 9, height = 6, dpi = 300)
+```
+
+## 6. What is the confusion matrix of referents? Eg when a drawing was called a crab, what did the description get called?
+
+### Only including the six target animals and "unclear" on either side, with everything else collapsed into "other". 
+
+```{r referent-confusion, fig.width=7.5, fig.height=6}
+CATS <- c("crab", "octopus", "whale", "shark", "seahorse", "turtle", "unclear")
+
+LEVELS <- c(CATS, "other")
+
+# expand_grid + left_join rather than complete(): the grid is built explicitly, so
+# empty cells are guaranteed present and drawn as zeroes instead of as gaps in the
+# tile layout.
+counted <- judgments %>%
+  filter(!is.na(drawing_referent), !is.na(utterance_referent)) %>%
+  mutate(d = ifelse(drawing_referent   %in% CATS, drawing_referent,   "other"),
+         u = ifelse(utterance_referent %in% CATS, utterance_referent, "other")) %>%
+  count(d, u)
+
+confusion <- expand_grid(d = LEVELS, u = LEVELS) %>%
+  left_join(counted, by = c("d", "u")) %>%
+  mutate(n = replace_na(n, 0L),
+         d = factor(d, levels = LEVELS),
+         u = factor(u, levels = rev(LEVELS)))
+
+p_conf <- ggplot(confusion, aes(d, u, fill = n)) +
+  geom_tile(colour = "white", linewidth = 0.4) +
+  geom_text(aes(label = ifelse(n > 0, n, "")),
+            size = 3, colour = ifelse(confusion$n > max(confusion$n) * 0.6,
+                                      "white", "grey20")) +
+  scale_fill_viridis_c(option = "magma", direction = -1, name = "trials") +
+  coord_fixed() +
+  labs(title = "Drawing referent vs description referent",
+       subtitle = "within-child trials; the diagonal is agreement",
+       x = "Gemini's label for the drawing",
+       y = "Gemini's label for the description") +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 40, hjust = 1))
+
+p_conf
+ggsave(fig_path("referent_confusion"), p_conf, width = 7.5, height = 6, dpi = 300)
+```
+
+### How about every label?!
+
+```{r referent-confusion-full, fig.width=13, fig.height=12}
+ALL_LABELS <- sort(unique(c(judgments$drawing_referent,
+                            judgments$utterance_referent)))
+ALL_LABELS <- ALL_LABELS[!is.na(ALL_LABELS)]
+
+# order: the six targets, then unclear, then the rest by total use across both
+# modalities, so the busy corner of the matrix is top-left instead of alphabetical
+rest <- setdiff(ALL_LABELS, CATS)
+used <- c(judgments$drawing_referent, judgments$utterance_referent)
+rest_freq <- names(sort(table(used[used %in% rest]), decreasing = TRUE))
+FULL_LEVELS <- c(CATS, rest_freq)
+
+counted_full <- judgments %>%
+  filter(!is.na(drawing_referent), !is.na(utterance_referent)) %>%
+  count(d = drawing_referent, u = utterance_referent)
+
+confusion_full <- expand_grid(d = FULL_LEVELS, u = FULL_LEVELS) %>%
+  left_join(counted_full, by = c("d", "u")) %>%
+  mutate(n = replace_na(n, 0L),
+         d = factor(d, levels = FULL_LEVELS),
+         u = factor(u, levels = rev(FULL_LEVELS)))
+
+p_conf_full <- ggplot(confusion_full, aes(d, u)) +
+  # empty cells drawn as a faint ground rather than left white, so the grid stays
+  # legible across 64 columns and a zero reads as "asked and not found"
+  geom_tile(fill = "grey96", colour = "white", linewidth = 0.25) +
+  geom_tile(data = filter(confusion_full, n > 0),
+            aes(fill = n), colour = "white", linewidth = 0.25) +
+  geom_text(data = filter(confusion_full, n > 0),
+            aes(label = n, colour = n > 20), size = 1.9) +
+  scale_fill_viridis_c(option = "magma", direction = -1, trans = "sqrt",
+                       name = "trials") +
+  scale_colour_manual(values = c(`FALSE` = "grey15", `TRUE` = "white"),
+                      guide = "none") +
+  coord_fixed() +
+  labs(title = "Drawing referent vs description referent, every label",
+       subtitle = sprintf(paste("%d within-child trials, %d distinct referents;",
+                                "targets first, then by frequency.",
+                                "Fill is sqrt-scaled."),
+                          nrow(judgments), length(ALL_LABELS)),
+       x = "Gemini's label for the drawing",
+       y = "Gemini's label for the description") +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5, size = 6),
+        axis.text.y = element_text(size = 6),
+        panel.grid = element_blank())
+
+p_conf_full
+ggsave(fig_path("referent_confusion_full"), p_conf_full,
+       width = 13, height = 12, dpi = 300)
+```
+
+What were the most common disagreements? The top 20 pairs of referents 
+
+```{r referent-disagreements}
+judgments %>%
+  filter(!is.na(drawing_referent), !is.na(utterance_referent),
+         drawing_referent != utterance_referent) %>%
+  count(drawing_referent, utterance_referent, sort = TRUE) %>%
+  head(20)
+```
+
+## 7. Age models
+
+The slopes the figures above are showing, as numbers.
+
+```{r models}
+library(lmerTest) 
+
+cat("\n--- alignment score ~ age (all participants) ---\n")
+age_all_model <- lmer(score ~ age_yrs + (1 | participant_id) + (1 | target_category), data = judgments)
+summary(age_all_model)
+
+cat("\n--- alignment score ~ age (children only) ---\n")
+age_children_model <- lmer(score ~ age_yrs + (1 | participant_id) + (1 | target_category), data = children)
+summary(age_children_model)
+
+cat("\n--- referents agree ~ age (logistic, all participants) ---\n")
+agree_model <- glmer(agree ~ age_yrs + (1 | participant_id) + (1 | target_category),
+                     family = binomial, data = agree_dat)
+summary(agree_model)
+```

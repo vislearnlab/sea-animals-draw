@@ -1,0 +1,228 @@
+---
+title: "Judge alignment on test pairs"
+output: html_document
+author: "nicole"
+date: "9.24.26"
+---
+
+Visualizes the alignment from gemini judgments on the 48 test pairs. The test pairs are a 2x2x2 design, balanced at 6 pairs per cell:
+
+`category_match` (same / different animal) x `drawing_status` (good / bad) x
+`utterance_status` (good / bad), 48 pairs total. Drawings and utterances come
+from different participants, so this measures whether the prompt works, not
+within-child alignment.
+
+Conventions follow `09_human_vs_gemini_features.R`: run from `analysis/`, paths
+relative to it, `theme_bw()`, `reorder_within` + `scale_y_reordered` for
+per-facet ordering, `ggsave(..., "../figures/...")`.
+
+```{r setup, message=FALSE, warning=FALSE}
+library(tidyverse)
+library(viridis)
+library(tidytext)
+
+knitr::opts_chunk$set(warning = FALSE, message = FALSE, fig.retina = 2)
+
+PROMPT_VERSION <- "v6"   # which prompt version to visualize; see 10_judge_alignment_test_pairs.py
+RAW_ALPHA      <- 0.3
+JITTER         <- position_jitter(width = 0.12, height = 0, seed = 1)
+
+
+PAL2 <- c("#4B0F6B", "#F06BA8") #Nice colors
+
+judgments <- read_csv("../data/test_pairs/alignment_judgments.csv") %>%
+  filter(prompt_version == PROMPT_VERSION, !is.na(score))
+
+# v2 asked the judge to name the drawing as well as the description; v3 asks only
+# about the description, so drawing_referent is empty for v3 rows. Section 3 is
+# are about this column, so tithey only runs for versions that requested it.
+HAS_DRAWING_REFERENT <- any(!is.na(judgments$drawing_referent))
+
+# Every figure filename carries the prompt version. Sections 3 and 5 are skipped
+# for versions that ask for no drawing referent, which would otherwise leave their
+# previous-version PNGs sitting in figures/ looking current.
+fig_path <- function(stem) sprintf("../figures/%s_%s.png", stem, PROMPT_VERSION)
+
+cat("rows:", nrow(judgments), "| prompt:", PROMPT_VERSION, "\n")
+cat("unique drawings:", n_distinct(judgments$drawing_participant,
+                                   judgments$drawing_category), "\n")
+cat("unique utterances:", n_distinct(judgments$utterance_participant,
+                                     judgments$utterance_category), "\n")
+cat("drawing referents available:", HAS_DRAWING_REFERENT, "\n")
+count(judgments, category_match, drawing_status, utterance_status)
+```
+
+```{r ci-helper}
+# mean + normal-theory 95% CI, clamped to the 0-100 range the score lives on
+summarise_ci <- function(df, ...) {
+  df %>%
+    group_by(...) %>%
+    summarise(
+      n        = n(),
+      mean     = mean(score),
+      se       = sd(score) / sqrt(n()),
+      # sd is 0 when every score in a cell is identical; qt() is undefined at n=1
+      ci       = ifelse(n() > 1, qt(0.975, n() - 1) * se, NA_real_),
+      .groups  = "drop"
+    ) %>%
+    mutate(
+      lower = pmax(0,   mean - replace_na(ci, 0)),
+      upper = pmin(100, mean + replace_na(ci, 0))
+    )
+}
+```
+
+## 1. What is the average alignment score for good vs bad drawings and utterances?
+
+Same-animal pairs only (n = 24). This is a sanity check, as each good/bad drawing was judged twice:
+once with a good utterance and once with a bad utterance. Thus, it's expected here that good drawings/utterances are not at ceiling.
+
+
+```{r modality-plot, fig.width=7, fig.height=4.5}
+same_animal <- filter(judgments, category_match)
+
+by_modality <- same_animal %>%
+  select(score, drawings = drawing_status, utterances = utterance_status) %>%
+  pivot_longer(c(drawings, utterances),
+               names_to = "modality", values_to = "status") %>%
+  mutate(status = factor(status, levels = c("good", "bad")))
+
+modality_ci <- summarise_ci(by_modality, modality, status)
+
+p_modality <- ggplot(by_modality, aes(status, score)) +
+  geom_col(data = modality_ci, aes(y = mean, fill = status),
+           width = 0.65, colour = NA) +
+  geom_errorbar(data = modality_ci,
+                aes(y = mean, ymin = lower, ymax = upper),
+                width = 0.15, colour = "black", linewidth = 0.5) +
+  geom_point(position = JITTER, colour = "black",
+             alpha = RAW_ALPHA, size = 1.8) +
+  facet_wrap(~ modality) +
+  scale_fill_manual(values = PAL2, guide = "none") +
+  scale_y_continuous(limits = c(0, 100), breaks = seq(0, 100, 25)) +
+  labs(
+    title    = "Alignment score by stimulus quality",
+    subtitle = "Same-animal pairs only (n = 24); bars are means with 95% CI, points are raw scores",
+    x        = NULL,
+    y        = "Alignment score (0-100)"
+  ) +
+  theme_bw()
+
+p_modality
+ggsave(fig_path("alignment_score_by_modality"), p_modality,
+       width = 7, height = 4.5, dpi = 300)
+modality_ci
+```
+
+## 2. How does alignment vary by drawing x utterance quality?
+
+```{r condition-plot, fig.width=7.5, fig.height=4.5}
+QUALITY_LABELS <- c(
+  good_good = "good drawing\ngood utterance",
+  good_bad  = "good drawing\nbad utterance",
+  bad_good  = "bad drawing\ngood utterance",
+  bad_bad   = "bad drawing\nbad utterance"
+)
+
+by_quality <- judgments %>%
+  filter(category_match) %>%
+  mutate(quality = factor(paste(drawing_status, utterance_status, sep = "_"),
+                          levels = names(QUALITY_LABELS)))
+
+quality_ci <- summarise_ci(by_quality, quality)
+
+p_condition <- ggplot(by_quality, aes(quality, score)) +
+  geom_col(data = quality_ci, aes(y = mean, fill = quality),
+           width = 0.65, colour = NA) +
+  geom_errorbar(data = quality_ci,
+                aes(y = mean, ymin = lower, ymax = upper),
+                width = 0.15, colour = "black", linewidth = 0.5) +
+  geom_point(position = JITTER, colour = "black",
+             alpha = RAW_ALPHA, size = 1.8) +
+  # 4 levels, so viridis rather than the two-colour PAL2 (see setup chunk)
+  scale_fill_viridis_d(end = 0.9, guide = "none") +
+  scale_x_discrete(labels = QUALITY_LABELS) +
+  scale_y_continuous(limits = c(0, 100), breaks = seq(0, 100, 25)) +
+  labs(
+    title    = "Mean alignment score by drawing x utterance quality",
+    subtitle = "Same-animal pairs only (n = 24, 6 per bar); bars are means with 95% CI, points are raw scores",
+    x        = NULL,
+    y        = "Alignment score (0-100)"
+  ) +
+  theme_bw()
+
+p_condition
+ggsave(fig_path("alignment_score_by_condition"), p_condition,
+       width = 7.5, height = 4.5, dpi = 300)
+quality_ci
+```
+
+## 3. What are drawings categorized as?
+
+*Only runs for prompt versions that ask the judge to name the drawing. v2 did;
+v3 asks for `description_referent` alone, so this section is empty at v3.*
+
+Counts are over the 48 *judgments*, not the 12 unique drawings. Each drawing is
+judged four times (paired with four different utterances) and the judge does not
+always return the same referent: 4 of the 12 drawings drew 2-4 distinct labels
+across their judgments. 
+
+```{r drawing-referents, fig.width=8.5, fig.height=5.5, eval=HAS_DRAWING_REFERENT}
+drawing_refs <- judgments %>%
+  count(drawing_category, drawing_referent) %>%
+  mutate(
+    correct   = drawing_referent == drawing_category,
+    referent  = reorder_within(drawing_referent, n, drawing_category)
+  )
+
+p_draw_ref <- ggplot(drawing_refs, aes(n, referent, fill = correct)) +
+  geom_col(width = 0.75) +
+  facet_wrap(~ drawing_category, scales = "free_y") +
+  scale_y_reordered() +
+  scale_x_continuous(breaks = scales::breaks_width(1)) +
+  scale_fill_manual(values = PAL2, name = "matches target") +
+  labs(
+    title    = "What Gemini called each drawing",
+    subtitle = "48 judgments over 12 drawings (each drawing judged 4x); faceted by intended category",
+    x        = "Number of judgments",
+    y        = NULL
+  ) +
+  theme_bw()
+
+p_draw_ref
+ggsave(fig_path("alignment_drawing_referents"), p_draw_ref,
+       width = 8.5, height = 5.5, dpi = 300)
+```
+
+## 4. What are utterances were categorized as?
+
+
+```{r utterance-referents, fig.width=8.5, fig.height=5.5}
+utterance_refs <- judgments %>%
+  count(utterance_category, utterance_referent) %>%
+  mutate(
+    correct  = utterance_referent == utterance_category,
+    referent = reorder_within(utterance_referent, n, utterance_category)
+  )
+
+p_utt_ref <- ggplot(utterance_refs, aes(n, referent, fill = correct)) +
+  geom_col(width = 0.75) +
+  facet_wrap(~ utterance_category, scales = "free_y") +
+  scale_y_reordered() +
+  scale_x_continuous(breaks = scales::breaks_width(1)) +
+  scale_fill_manual(values = PAL2, name = "matches target") +
+  labs(
+    title    = "What Gemini called each utterance",
+    subtitle = "48 judgments over 12 utterances (each utterance judged 4x); faceted by intended category",
+    x        = "Number of judgments",
+    y        = NULL
+  ) +
+  theme_bw()
+
+p_utt_ref
+ggsave(fig_path("alignment_utterance_referents"), p_utt_ref,
+       width = 8.5, height = 5.5, dpi = 300)
+```
+
+
+### Note that in this notebook we do not look at developmental trends in alignment, as the test-pairs are across participants and the age distribution is not balanced. 16_visualize_alignment_within_child.Rmd looks at developmental trends in alignment across all pairs, including within-participant pairs.
