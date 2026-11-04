@@ -67,6 +67,7 @@ A `g` suffix means the same step with Gemini instead of CLIP.
 | `13_drawing_grid.py` | Grid of drawings by animal and age | local |
 | `14_additional_diagnostics.Rmd` | Presentation-order and bounding-box checks | — |
 | `15_judge_alignment_within_child.py` | Judges each child's drawing against their own description | local, API |
+| `15b_judge_referents_isolated.py` | Names the animal in each drawing and description in separate calls (no cross-modal leakage), plus target recognizability | local, API |
 | `16_visualize_alignment_within_child.Rmd` | Plots `15`, with age models | — |
 
 `PROMPT_VERSION` in `10` sets the judge prompt for `10`, `12` and `15`; `11` and `16` set it separately. Bumping it re-judges everything and keeps old rows.
