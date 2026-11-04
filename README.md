@@ -51,6 +51,7 @@ Key tidy columns: `*_exists` and `*_interference` (exclusion flags); `trial_num_
 | `05b_add_trial_num.py` | Adds presentation order to tidy (run after `05a`) | local |
 | `05c_create_test_pairs.py` | Builds `data/test_pairs/` from tidy | — |
 | `gemini_embed.py` | Shared Gemini helpers, imported by the scripts above | — |
+| `check_masking.py` | Flags masked descriptions that still contain the animal's name; exits 1 on any leak | — |
 
 A `g` suffix means the same step with Gemini instead of CLIP.
 
@@ -75,3 +76,4 @@ A `g` suffix means the same step with Gemini instead of CLIP.
 
 - Gemini half-time drawing embeddings have not been generated, so `draw_half_cossim_adults` is empty in `data/preprocessed/gemini/`.
 - `05a` rebuilds tidy without the presentation-order columns; run `05b` afterwards to get the run order (todo here: adjust for efficiency).
+- 13 masked descriptions (12 children, 1 adult) still name the target animal, usually as a plural or compound ("sharks", "octopuses", "seaturtles", "spider crab"). Run `preprocessing/check_masking.py` for the list. Fix them in the upstream transcripts, then re-run the embedding (`03*`), similarity (`04*`) and judge (`15`) steps.
