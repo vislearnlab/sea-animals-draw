@@ -61,6 +61,7 @@ A `g` suffix means the same step with Gemini instead of CLIP.
 | `06`–`09b` | CLIP analyses: similarity to adults, RSMs, features, 50% vs 100% timepoints | — |
 | `06g_correlation_analysis_gemini` | Similarity to adults by age; drawing vs description | — |
 | `07g_rsm_toself_analysis_gemini` | Within-child RSMs, drawing/description↔label RDMs | — |
+| `07c_rsa_missingness_check.py` | Cross-modal RSA corrected for missing categories (complete cases, raw cosine, permutation tests); supersedes the RSA numbers in `07`/`07g` | — |
 | `10_judge_alignment_test_pairs.py` | Validates the alignment prompt on test pairs | local, API |
 | `11_visualize_alignment_test_pairs.Rmd` | Plots `10` | — |
 | `12_pair_gallery.py` | Contact sheet of test pairs and scores | local |
