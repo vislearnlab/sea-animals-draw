@@ -68,6 +68,12 @@ A `g` suffix means the same step with Gemini instead of CLIP.
 | `14_additional_diagnostics.Rmd` | Presentation-order and bounding-box checks | — |
 | `15_judge_alignment_within_child.py` | Judges each child's drawing against their own description | local, API |
 | `16_visualize_alignment_within_child.Rmd` | Plots `15`, with age models | — |
+| `17a_loo_adult_similarity.py` | Leave-one-out adult similarity (Gemini) for children and adults → `data/derived/loo_adult_sims.csv` | — |
+| `17b_within_child_coupling.R` | Within-child drawing↔description models (4 model pairings, effort controls, per animal, adults) | — |
+| `17c_within_child_permutations.py` | Child-swap permutation and yoked feature-overlap tests | — |
+| `17d_category_profile.py` | Per-animal coupling vs. drawing homogeneity and feature diversity | — |
+
+Exploratory analyses on open THINGS datasets (which concepts show knowledge → drawing effects) are in `explore/things/` with their own README. `FINDINGS.md` summarizes robust results, open questions and the analysis log.
 
 `PROMPT_VERSION` in `10` sets the judge prompt for `10`, `12` and `15`; `11` and `16` set it separately. Bumping it re-judges everything and keeps old rows.
 

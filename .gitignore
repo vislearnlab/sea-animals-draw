@@ -24,3 +24,4 @@ data/test_pairs
 .venv/
 .claude/
 __pycache__/
+explore/things/raw/
